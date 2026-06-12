@@ -114,11 +114,12 @@ class ControlServer(
 
     fun stop() {
         running = false
-        currentSession?.send(ControlMessage.Bye("host stopped sharing"))
-        currentSession?.close()
-        try {
-            serverSocket?.close()
-        } catch (_: Exception) {
-        }
+        val session = currentSession
+        // Network I/O must stay off the main thread (stop() is called from onDestroy).
+        Thread({
+            session?.send(ControlMessage.Bye("host stopped sharing"))
+            session?.close()
+            runCatching { serverSocket?.close() }
+        }, "ControlServer-stop").start()
     }
 }

@@ -75,6 +75,7 @@ class InputInjectionService : AccessibilityService() {
 
     /** Entry point: called from network threads. */
     fun inject(events: List<RemoteInputEvent>) {
+        Log.d(TAG, "inject ${events.size} event(s): ${events.firstOrNull()}")
         mainHandler.post {
             for (e in events) {
                 when (e) {
@@ -154,6 +155,7 @@ class InputInjectionService : AccessibilityService() {
             mainHandler,
         )
         if (!dispatched) {
+            Log.w(TAG, "dispatchGesture rejected")
             strokeInProgress = false
             activeStroke = null
         }
