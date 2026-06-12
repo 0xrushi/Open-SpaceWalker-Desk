@@ -1,0 +1,7 @@
+zeroconf>=0.131
+av>=12.0
+pygame>=2.5
+evdev>=1.6
+# PyGObject (gi) + GStreamer are system packages — install via your distro,
+# e.g. Arch:   sudo pacman -S python-gobject gst-plugins-base gst-plugins-good gst-plugin-pipewire gst-plugins-ugly
+#      Debian: sudo apt install python3-gi gstreamer1.0-pipewire gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-plugins-base
