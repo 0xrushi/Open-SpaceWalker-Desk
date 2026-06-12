@@ -29,6 +29,7 @@ import com.rushi.spacedesk.shared.ControlMessage
 import com.rushi.spacedesk.shared.Protocol
 import com.rushi.spacedesk.shared.RemoteInputEvent
 import java.net.InetAddress
+import java.util.concurrent.Executors
 
 /**
  * Foreground service that owns the whole sharing session:
@@ -71,6 +72,35 @@ class ScreenCaptureService : Service(), ControlServer.Callbacks {
     /** Last codec-config (SPS/PPS) frame, resent whenever a stream (re)starts. */
     @Volatile
     private var lastConfigFrame: ByteArray? = null
+
+    // Active stream parameters, kept so the stream can be rebuilt on rotation.
+    @Volatile
+    private var activeRequest: ControlMessage.StartStream? = null
+
+    @Volatile
+    private var activeClientAddress: InetAddress? = null
+
+    @Volatile
+    private var activeSession: ControlServer.ClientSession? = null
+
+    private val streamLock = Any()
+    private val streamExecutor = Executors.newSingleThreadExecutor()
+
+    /** Restarts the stream when the host display rotates (size swap). */
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) {}
+        override fun onDisplayRemoved(displayId: Int) {}
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId != android.view.Display.DEFAULT_DISPLAY) return
+            val oldW = screenWidth
+            val oldH = screenHeight
+            readScreenMetrics()
+            if ((screenWidth != oldW || screenHeight != oldH) && activeRequest != null) {
+                Log.i(TAG, "display now ${screenWidth}x$screenHeight, restarting stream")
+                streamExecutor.execute { startOrRestartStream() }
+            }
+        }
+    }
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -116,6 +146,9 @@ class ScreenCaptureService : Service(), ControlServer.Callbacks {
         controlServer = ControlServer(Protocol.DEFAULT_CONTROL_PORT, this).also { it.start() }
         nsdAdvertiser = NsdAdvertiser(this).also { it.register(Protocol.DEFAULT_CONTROL_PORT) }
 
+        (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
+            .registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
+
         HostState.isSharing.value = true
         HostState.streamInfo.value = "Waiting for a client…"
         Log.i(TAG, "sharing started, control port ${Protocol.DEFAULT_CONTROL_PORT}")
@@ -154,8 +187,19 @@ class ScreenCaptureService : Service(), ControlServer.Callbacks {
         clientAddress: InetAddress,
         session: ControlServer.ClientSession,
     ) {
-        // Tear down any previous stream.
-        stopStream()
+        activeRequest = req
+        activeClientAddress = clientAddress
+        activeSession = session
+        streamExecutor.execute { startOrRestartStream() }
+    }
+
+    /** (Re)builds encoder + virtual display + sender for the current screen size. */
+    private fun startOrRestartStream(): Unit = synchronized(streamLock) {
+        val req = activeRequest ?: return
+        val clientAddress = activeClientAddress ?: return
+        val session = activeSession ?: return
+
+        stopStreamLocked()
 
         // Fit host screen into client's requested max size, even-aligned.
         val scale = minOf(
@@ -173,6 +217,11 @@ class ScreenCaptureService : Service(), ControlServer.Callbacks {
             if (config) lastConfigFrame = data
             newSender.submit(data, keyframe, config)
         }
+
+        // Tell the client the new geometry BEFORE frames start flowing, so it
+        // can restart its decoder in time for the incoming SPS/PPS.
+        session.send(ControlMessage.VideoConfig(outW, outH, req.fps))
+
         newEncoder.start()
         encoder = newEncoder
 
@@ -184,7 +233,6 @@ class ScreenCaptureService : Service(), ControlServer.Callbacks {
             null, null,
         )
 
-        session.send(ControlMessage.VideoConfig(outW, outH, req.fps))
         newEncoder.requestKeyFrame()
 
         HostState.streamInfo.value = "${outW}x$outH @ ${req.fps}fps → $clientAddress"
@@ -199,12 +247,17 @@ class ScreenCaptureService : Service(), ControlServer.Callbacks {
     override fun onClientDisconnected() {
         HostState.connectedClient.value = null
         HostState.streamInfo.value = "Waiting for a client…"
+        activeRequest = null
+        activeClientAddress = null
+        activeSession = null
         stopStream()
     }
 
     // ---------------- teardown ----------------
 
-    private fun stopStream() {
+    private fun stopStream() = synchronized(streamLock) { stopStreamLocked() }
+
+    private fun stopStreamLocked() {
         virtualDisplay?.release()
         virtualDisplay = null
         encoder?.stop()
@@ -214,7 +267,11 @@ class ScreenCaptureService : Service(), ControlServer.Callbacks {
     }
 
     override fun onDestroy() {
+        (getSystemService(Context.DISPLAY_SERVICE) as DisplayManager)
+            .unregisterDisplayListener(displayListener)
+        activeRequest = null
         stopStream()
+        streamExecutor.shutdown()
         nsdAdvertiser?.unregister()
         nsdAdvertiser = null
         controlServer?.stop()

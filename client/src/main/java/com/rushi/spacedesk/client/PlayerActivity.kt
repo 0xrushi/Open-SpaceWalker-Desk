@@ -57,11 +57,18 @@ class PlayerActivity : ComponentActivity(), ControlClient.Listener {
     @Volatile
     private var pendingConfigFrame: ByteArray? = null
 
+    /** Extra user-applied view rotation in degrees (0/90/180/270). */
+    private var manualRotationDeg = 0
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        root = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            // A 90°-rotated SurfaceView's layout bounds exceed the parent; don't clip.
+            clipChildren = false
+        }
         surfaceView = SurfaceView(this)
         root.addView(
             surfaceView,
@@ -136,6 +143,14 @@ class PlayerActivity : ComponentActivity(), ControlClient.Listener {
     }
 
     override fun onVideoConfig(config: ControlMessage.VideoConfig) {
+        val changed = videoWidth != config.width || videoHeight != config.height
+        if (changed && decoder != null) {
+            // Host rotated / re-negotiated: rebuild the decoder for the new
+            // geometry. We're on the control read thread, so blocking is fine.
+            decoder?.stop()
+            decoder = null
+            pendingConfigFrame = null // old SPS/PPS is invalid now
+        }
         videoWidth = config.width
         videoHeight = config.height
         runOnUiThread {
@@ -157,12 +172,17 @@ class PlayerActivity : ComponentActivity(), ControlClient.Listener {
      * Sizes the SurfaceView so the video keeps its aspect ratio, centered.
      * MediaCodec scales output to fill the surface, so the surface itself
      * must have the video's shape — this also makes touch mapping trivial.
+     * With 90°/270° manual rotation, the fit is computed against the rotated
+     * footprint while the layout keeps the un-rotated shape.
      */
     private fun applyAspectFit() {
         if (videoWidth == 0 || videoHeight == 0 || root.width == 0 || root.height == 0) return
+        val sideways = manualRotationDeg % 180 != 0
+        val visualW = if (sideways) videoHeight else videoWidth
+        val visualH = if (sideways) videoWidth else videoHeight
         val scale = minOf(
-            root.width.toFloat() / videoWidth,
-            root.height.toFloat() / videoHeight,
+            root.width.toFloat() / visualW,
+            root.height.toFloat() / visualH,
         )
         val w = (videoWidth * scale).toInt()
         val h = (videoHeight * scale).toInt()
@@ -173,6 +193,7 @@ class PlayerActivity : ComponentActivity(), ControlClient.Listener {
             lp.gravity = Gravity.CENTER
             surfaceView.layoutParams = lp
         }
+        surfaceView.rotation = manualRotationDeg.toFloat()
     }
 
     private fun onVideoFrame(data: ByteArray, config: Boolean) {
@@ -240,6 +261,15 @@ class PlayerActivity : ComponentActivity(), ControlClient.Listener {
         bar.addView(navButton("◁", NavAction.BACK))
         bar.addView(navButton("○", NavAction.HOME))
         bar.addView(navButton("□", NavAction.RECENTS))
+
+        val rotateButton = Button(this).apply {
+            text = "⟳"
+            setOnClickListener {
+                manualRotationDeg = (manualRotationDeg + 90) % 360
+                applyAspectFit()
+            }
+        }
+        bar.addView(rotateButton)
 
         val textEntry = EditText(this).apply {
             hint = "Send text…"

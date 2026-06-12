@@ -54,14 +54,19 @@ class InputInjectionService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        refreshScreenSize()
+        HostState.accessibilityRunning.value = true
+        Log.i(TAG, "connected, screen ${screenW}x$screenH")
+    }
+
+    /** Re-reads the display size; rotation swaps width/height. */
+    private fun refreshScreenSize() {
         @Suppress("DEPRECATION")
         val metrics = android.util.DisplayMetrics().also {
             (getSystemService(WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(it)
         }
         screenW = metrics.widthPixels
         screenH = metrics.heightPixels
-        HostState.accessibilityRunning.value = true
-        Log.i(TAG, "connected, screen ${screenW}x$screenH")
     }
 
     override fun onDestroy() {
@@ -91,6 +96,7 @@ class InputInjectionService : AccessibilityService() {
 
     private fun handleTouch(e: RemoteInputEvent.Touch) {
         if (e.pointerId != 0) return // v1: single pointer
+        if (e.action == TouchAction.DOWN) refreshScreenSize() // track rotation
         val x = (e.x * screenW).coerceIn(0f, screenW - 1f)
         val y = (e.y * screenH).coerceIn(0f, screenH - 1f)
 
