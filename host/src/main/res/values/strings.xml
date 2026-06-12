@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SpaceDesk Host</string>
+    <string name="accessibility_service_label">SpaceDesk Remote Input</string>
+    <string name="accessibility_service_description">Allows connected SpaceDesk client devices to control this device with touch, navigation, and text input. Only active while you are sharing your screen.</string>
+</resources>
