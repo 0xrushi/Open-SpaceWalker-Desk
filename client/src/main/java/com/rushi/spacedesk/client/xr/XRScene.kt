@@ -17,7 +17,9 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.tan
 
-private const val FOV_Y = 60f
+private const val FOV_DEFAULT = 60f
+private const val FOV_MIN = 15f   // maximum zoom in
+private const val FOV_MAX = 90f   // maximum zoom out
 private const val DEG = (Math.PI / 180.0).toFloat()
 
 /**
@@ -59,8 +61,9 @@ class XRRenderer(
 
     val nodes = CopyOnWriteArrayList<ScreenNode>()
 
-    @Volatile var camYaw = 0f   // degrees
+    @Volatile var camYaw = 0f    // degrees
     @Volatile var camPitch = 0f
+    @Volatile var camFov = FOV_DEFAULT  // degrees; decrease to zoom in, increase to zoom out
 
     @Volatile private var aspect = 16f / 9f
     private var program = 0
@@ -104,11 +107,13 @@ class XRRenderer(
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
         aspect = width.toFloat() / height
-        Matrix.perspectiveM(proj, 0, FOV_Y, aspect, 0.1f, 50f)
+        // Projection is rebuilt every frame using camFov so zoom takes effect immediately.
     }
 
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+        // Rebuild projection each frame so camFov changes are applied in real time.
+        Matrix.perspectiveM(proj, 0, camFov, aspect, 0.1f, 50f)
 
         val p = camPitch * DEG
         val yw = camYaw * DEG
@@ -178,7 +183,7 @@ class XRRenderer(
              clampTo: ScreenNode? = null): Hit? {
         val ndcX = 2f * touchX / viewW - 1f
         val ndcY = 1f - 2f * touchY / viewH
-        val tanF = tan(FOV_Y / 2 * DEG)
+        val tanF = tan(camFov / 2 * DEG)
         // Camera-space ray, rotated by pitch (X) then yaw (Y) into world space.
         var dx = ndcX * tanF * aspect
         var dy = ndcY * tanF

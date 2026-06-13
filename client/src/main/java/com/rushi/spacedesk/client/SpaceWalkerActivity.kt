@@ -15,6 +15,7 @@ import android.view.WindowInsets
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -37,12 +38,29 @@ private const val MAX_SCREENS = 3
  * fills them). Lock mode: drag empty space to look around, touch a screen to
  * control the host (tap-through). Edit mode: drag screens along the arc /
  * up-down, pinch to resize.
+ *
+ * Zoom (+/−): adjusts [XRRenderer.camDistance] — pulls the camera closer or
+ * further from the arc of screens, making everything appear larger or smaller.
+ * Capped at [ZOOM_DIST_MIN]..[ZOOM_DIST_MAX].
+ *
+ * Rotation slider: fine-tunes [XRRenderer.camYaw] across the full 360° range,
+ * supplementing the drag-to-look gesture already present in Lock mode.
  */
 class SpaceWalkerActivity : ComponentActivity(), ControlClient.Listener {
 
     companion object {
         const val EXTRA_HOST = "host"
         const val EXTRA_PORT = "port"
+
+        /** FOV range in degrees. Smaller = zoomed in (telephoto), larger = zoomed out. */
+        private const val ZOOM_FOV_DEFAULT = 60f
+        private const val ZOOM_FOV_MIN = 15f   // zoomed in
+        private const val ZOOM_FOV_MAX = 90f   // zoomed out
+        private const val ZOOM_STEP = 5f       // degrees per button press
+
+        /** Slider covers ±180° around the starting yaw (effectively full circle). */
+        private const val SLIDER_HALF_DEG = 180
+        private const val SLIDER_MAX = SLIDER_HALF_DEG * 2  // 0..360 → −180°..+180°
     }
 
     private inner class Screen(val id: Int) {
@@ -57,6 +75,7 @@ class SpaceWalkerActivity : ComponentActivity(), ControlClient.Listener {
     private lateinit var glView: GLSurfaceView
     private lateinit var renderer: XRRenderer
     private lateinit var statusText: TextView
+    private lateinit var rotationSlider: SeekBar
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var control: ControlClient? = null
@@ -243,6 +262,8 @@ class SpaceWalkerActivity : ComponentActivity(), ControlClient.Listener {
                     orbiting -> {
                         renderer.camYaw += dx * 0.18f
                         renderer.camPitch = (renderer.camPitch + dy * 0.18f).coerceIn(-75f, 75f)
+                        // Keep slider in sync when the user drags to look around.
+                        syncSliderToYaw()
                     }
                 }
             }
@@ -282,6 +303,9 @@ class SpaceWalkerActivity : ComponentActivity(), ControlClient.Listener {
     // ------------------------------------------------------------ overlay ---
 
     private fun buildOverlay(): View {
+        val container = FrameLayout(this)
+
+        // ── right-side vertical button column (unchanged from original) ──
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             alpha = 0.75f
@@ -299,6 +323,15 @@ class SpaceWalkerActivity : ComponentActivity(), ControlClient.Listener {
             b.text = if (editMode) "🔒 Lock" else "✏ Edit"
             updateStatus()
         }
+
+        // ── zoom buttons: decrease FOV = zoom in, increase FOV = zoom out ──
+        btn("＋ Zoom") {
+            renderer.camFov = (renderer.camFov - ZOOM_STEP).coerceAtLeast(ZOOM_FOV_MIN)
+        }
+        btn("－ Zoom") {
+            renderer.camFov = (renderer.camFov + ZOOM_STEP).coerceAtMost(ZOOM_FOV_MAX)
+        }
+
         btn("✕ Exit") { finish() }
 
         statusText = TextView(this).apply {
@@ -308,21 +341,85 @@ class SpaceWalkerActivity : ComponentActivity(), ControlClient.Listener {
         }
         updateStatus()
 
-        return FrameLayout(this).apply {
-            addView(bar, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+        container.addView(
+            bar,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP or Gravity.END,
-            ))
-            addView(statusText, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        container.addView(
+            statusText,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP or Gravity.START,
-            ))
+            ),
+        )
+
+        // ── bottom rotation slider ──
+        val sliderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            alpha = 0.80f
+            setBackgroundColor(Color.argb(140, 0, 0, 0))
+            setPadding(16, 4, 16, 4)
+        }
+        sliderRow.addView(TextView(this).apply {
+            text = "↻"
+            setTextColor(Color.WHITE)
+            textSize = 18f
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 12, 0)
+        })
+
+        rotationSlider = SeekBar(this).apply {
+            max = SLIDER_MAX  // 0 = −180°, 180 = 0°, 360 = +180°
+            progress = SLIDER_HALF_DEG  // start centered
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                    if (fromUser) {
+                        // Map 0..360 → −180°..+180°, apply as absolute camYaw offset.
+                        renderer.camYaw = (progress - SLIDER_HALF_DEG).toFloat()
+                    }
+                }
+                override fun onStartTrackingTouch(sb: SeekBar) {}
+                override fun onStopTrackingTouch(sb: SeekBar) {}
+            })
+        }
+        sliderRow.addView(
+            rotationSlider,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
+
+        container.addView(
+            sliderRow,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM,
+            ),
+        )
+
+        return container
+    }
+
+    /**
+     * After a drag-to-look gesture, clamp camYaw to ±180° and update the
+     * slider so it reflects the current look direction.
+     */
+    private fun syncSliderToYaw() {
+        val clamped = renderer.camYaw.coerceIn(-SLIDER_HALF_DEG.toFloat(), SLIDER_HALF_DEG.toFloat())
+        renderer.camYaw = clamped
+        if (::rotationSlider.isInitialized) {
+            rotationSlider.progress = (clamped + SLIDER_HALF_DEG).toInt()
         }
     }
 
     private fun updateStatus() {
         statusText.text = buildString {
-            append(if (editMode) "EDIT — drag screens, pinch to resize" else "LOCKED — drag space to look, touch screens to control")
+            append(if (editMode) "EDIT — drag screens, pinch to resize"
+                   else "LOCKED — drag space to look, touch screens to control")
             append("  •  ${screens.size}/$MAX_SCREENS screens")
         }
     }
