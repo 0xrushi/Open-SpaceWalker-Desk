@@ -46,6 +46,19 @@ The host's `InputInjectionService` (AccessibilityService) turns the client's tou
 3. On the host: enable the **SpaceDesk Remote Input** accessibility service (the app links to settings), then tap **Start sharing** and accept the screen-capture prompt.
 4. On the client (same Wi-Fi): the host appears via mDNS — tap it, or enter the host's IP manually. Video starts automatically; touch the screen to control the host, use the overlay for Back/Home/Recents and text entry.
 
+### Android 13+: accessibility service blocked
+
+Android 13's **Restricted Settings** feature intentionally blocks accessibility services for apps installed through ADB (sideloaded), because malware commonly abuses accessibility to steal data. This is Android platform behavior and is not caused by the app's code.
+
+To allow the accessibility service:
+
+1. Go to **Settings → Apps → SpaceDesk** (the host app).
+2. Tap the **⋮** three-dot menu in the top-right corner.
+3. Tap **Allow restricted settings** and confirm.
+4. Return to SpaceDesk and enable the accessibility service normally.
+
+This setting tells Android that you explicitly trust the sideloaded app to use sensitive permissions. You only need to enable it once per installation. Uninstalling and reinstalling the app resets it.
+
 ## Current scope (v1) and known limitations
 
 Working: H.264 720p–1080p mirroring at 30 fps with loss-tolerant UDP transport, mDNS discovery, manual IP fallback, touch/drag/scroll injection, nav keys, basic text entry, view-only mode (input toggle), single client.

@@ -1,6 +1,10 @@
 package com.rushi.spacedesk.client
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.opengl.GLSurfaceView
 import android.os.Build
@@ -31,6 +35,16 @@ import kotlin.concurrent.thread
 import kotlin.math.abs
 
 private const val MAX_SCREENS = 3
+
+/** Broadcast actions sent by xr-companion (same phone) to control SpaceWalker. */
+object SpaceWalkerActions {
+    const val ZOOM_IN       = "com.rushi.spacedesk.SPACEWALKER_ZOOM_IN"
+    const val ZOOM_OUT      = "com.rushi.spacedesk.SPACEWALKER_ZOOM_OUT"
+    const val SET_ROTATION  = "com.rushi.spacedesk.SPACEWALKER_ROTATE"
+    const val ADD_SCREEN    = "com.rushi.spacedesk.SPACEWALKER_ADD_SCREEN"
+    const val REMOVE_SCREEN = "com.rushi.spacedesk.SPACEWALKER_REMOVE_SCREEN"
+    const val EXTRA_DEGREES = "degrees"
+}
 
 /**
  * SpaceWalker mode: up to [MAX_SCREENS] host screens float on an arc in a 3D
@@ -95,6 +109,23 @@ class SpaceWalkerActivity : ComponentActivity(), ControlClient.Listener {
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Register here (not onResume) so broadcasts arrive even when xr-companion is in foreground.
+        val filter = IntentFilter().apply {
+            addAction(SpaceWalkerActions.ZOOM_IN)
+            addAction(SpaceWalkerActions.ZOOM_OUT)
+            addAction(SpaceWalkerActions.SET_ROTATION)
+            addAction(SpaceWalkerActions.ADD_SCREEN)
+            addAction(SpaceWalkerActions.REMOVE_SCREEN)
+        }
+        // RECEIVER_EXPORTED is required: xr-companion is a different app (different UID).
+        // RECEIVER_NOT_EXPORTED silently drops broadcasts from other apps.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(spaceWalkerReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(spaceWalkerReceiver, filter)
+        }
 
         renderer = XRRenderer(onSurfaceFor = { node -> mainHandler.post { maybeStartDecoder(node.id) } })
         glView = GLSurfaceView(this).apply {
@@ -438,7 +469,30 @@ class SpaceWalkerActivity : ComponentActivity(), ControlClient.Listener {
         }
     }
 
+    // ------------------------------------------------ broadcast receiver ----
+
+    private val spaceWalkerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                SpaceWalkerActions.ZOOM_IN -> {
+                    renderer.camFov = (renderer.camFov - ZOOM_STEP).coerceAtLeast(ZOOM_FOV_MIN)
+                }
+                SpaceWalkerActions.ZOOM_OUT -> {
+                    renderer.camFov = (renderer.camFov + ZOOM_STEP).coerceAtMost(ZOOM_FOV_MAX)
+                }
+                SpaceWalkerActions.SET_ROTATION -> {
+                    val deg = intent.getFloatExtra(SpaceWalkerActions.EXTRA_DEGREES, 0f)
+                    renderer.camYaw = deg.coerceIn(-SLIDER_HALF_DEG.toFloat(), SLIDER_HALF_DEG.toFloat())
+                    syncSliderToYaw()
+                }
+                SpaceWalkerActions.ADD_SCREEN    -> mainHandler.post { addScreen() }
+                SpaceWalkerActions.REMOVE_SCREEN -> mainHandler.post { removeScreen() }
+            }
+        }
+    }
+
     override fun onDestroy() {
+        unregisterReceiver(spaceWalkerReceiver)
         control?.close()
         control = null
         for (screen in screens.values) {
