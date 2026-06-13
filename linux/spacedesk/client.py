@@ -159,20 +159,24 @@ def main() -> None:
 
     pygame.init()
     # pygame.init() swallows display-driver failures; init the display module
-    # explicitly and fall back to X11 (XWayland) if the Wayland driver fails.
+    # explicitly. On Linux, fall back to X11 (XWayland) if Wayland fails.
     try:
         pygame.display.init()
-    except pygame.error:
+    except pygame.error as first_err:
         import os
-        os.environ["SDL_VIDEODRIVER"] = "x11"
-        try:
-            pygame.display.init()
-        except pygame.error as ex:
-            sys.exit(
-                f"Could not initialize a display ({ex}).\n"
-                "Try: SDL_VIDEODRIVER=wayland or =x11, and make sure SDL2 "
-                "was built with that backend."
-            )
+        import platform
+        if platform.system() == "Linux":
+            os.environ["SDL_VIDEODRIVER"] = "x11"
+            try:
+                pygame.display.init()
+            except pygame.error as ex:
+                sys.exit(
+                    f"Could not initialize a display ({ex}).\n"
+                    "Try: SDL_VIDEODRIVER=wayland or =x11, and make sure SDL2 "
+                    "was built with that backend."
+                )
+        else:
+            sys.exit(f"Could not initialize a display: {first_err}")
     pygame.display.set_caption(f"SpaceDesk — {host}")
     info = pygame.display.Info()
 

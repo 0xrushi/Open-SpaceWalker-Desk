@@ -1,6 +1,16 @@
-# SpaceDesk for Android
+# SpaceDesk
 
-Android-to-Android display streaming: one Android device (the **host**) shares its screen over Wi-Fi, another (the **client**) renders it full-screen and sends touch, navigation, and text input back. A spacedesk-style "wireless monitor + input console" built entirely on public APIs — no root.
+Cross-platform display streaming: one device (the **host**) shares its screen over Wi-Fi, while another (the **client**) renders it full-screen and sends input back. Android-to-Android streaming is supported through the native apps, with desktop host and client support for Linux, macOS, and Windows.
+
+## Platform support
+
+- **Android:** Host and client supported.
+- **Linux:** Desktop host and client supported.
+- **macOS:** Desktop host and client supported.
+- **Windows:** Desktop host and client added, but not yet tested.
+- **Space Walker:** Android client only. Most AR devices run Android, so other client platforms are not currently supported.
+
+See [`linux/README.md`](linux/README.md) for desktop setup instructions.
 
 ## Architecture
 

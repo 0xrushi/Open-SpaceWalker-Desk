@@ -75,10 +75,17 @@ class InputSink:
             elif t == "text":
                 self._text(ev.get("text", ""))
 
+    def touch_px(self, action: str, x: int, y: int) -> None:
+        """Touch at absolute device coordinates (multi-screen mapping)."""
+        self._touch_at(action, min(max(x, 0), self.w - 1), min(max(y, 0), self.h - 1))
+
     def _touch(self, ev: dict) -> None:
         action = ev["action"]
         x = int(min(max(ev["x"], 0.0), 1.0) * (self.w - 1))
         y = int(min(max(ev["y"], 0.0), 1.0) * (self.h - 1))
+        self._touch_at(action, x, y)
+
+    def _touch_at(self, action: str, x: int, y: int) -> None:
         if action == "DOWN":
             self.touch.write(e.EV_ABS, e.ABS_X, x)
             self.touch.write(e.EV_ABS, e.ABS_Y, y)
@@ -89,6 +96,12 @@ class InputSink:
         elif action in ("UP", "CANCEL"):
             self.touch.write(e.EV_KEY, e.BTN_TOUCH, 0)
         self.touch.syn()
+
+    def nav(self, action: str) -> None:
+        self._nav(action)
+
+    def text(self, text: str) -> None:
+        self._text(text)
 
     def _nav(self, action: str) -> None:
         combo = _NAV_KEYS.get(action)

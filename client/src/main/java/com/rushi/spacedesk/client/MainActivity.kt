@@ -37,9 +37,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                DiscoveryScreen { host, port ->
+                DiscoveryScreen { host, port, spaceWalker ->
+                    val target = if (spaceWalker) SpaceWalkerActivity::class.java
+                                 else PlayerActivity::class.java
                     startActivity(
-                        Intent(this, PlayerActivity::class.java)
+                        Intent(this, target)
                             .putExtra(PlayerActivity.EXTRA_HOST, host)
                             .putExtra(PlayerActivity.EXTRA_PORT, port),
                     )
@@ -52,10 +54,11 @@ class MainActivity : ComponentActivity() {
 private data class DiscoveredHost(val name: String, val host: String, val port: Int)
 
 @Composable
-private fun DiscoveryScreen(onConnect: (host: String, port: Int) -> Unit) {
+private fun DiscoveryScreen(onConnect: (host: String, port: Int, spaceWalker: Boolean) -> Unit) {
     val context = LocalContext.current
     val hosts = remember { mutableStateMapOf<String, DiscoveredHost>() }
     var manualIp by remember { mutableStateOf("") }
+    var spaceWalker by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         val discovery = NsdDiscovery(
@@ -74,6 +77,22 @@ private fun DiscoveryScreen(onConnect: (host: String, port: Int) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("SpaceDesk Client", style = MaterialTheme.typography.headlineMedium)
+
+        Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            androidx.compose.material3.Switch(
+                checked = spaceWalker,
+                onCheckedChange = { spaceWalker = it },
+            )
+            Column {
+                Text("SpaceWalker mode", style = MaterialTheme.typography.titleMedium)
+                Text("Up to 3 screens floating in 3D (for XR glasses)",
+                     style = MaterialTheme.typography.bodySmall)
+            }
+        }
+
         Text("Hosts on your network", style = MaterialTheme.typography.titleMedium)
 
         LazyColumn(
@@ -84,7 +103,7 @@ private fun DiscoveryScreen(onConnect: (host: String, port: Int) -> Unit) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onConnect(h.host, h.port) },
+                        .clickable { onConnect(h.host, h.port, spaceWalker) },
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Text(h.name, style = MaterialTheme.typography.titleMedium)
@@ -109,7 +128,7 @@ private fun DiscoveryScreen(onConnect: (host: String, port: Int) -> Unit) {
                 singleLine = true,
             )
             Button(
-                onClick = { if (manualIp.isNotBlank()) onConnect(manualIp.trim(), Protocol.DEFAULT_CONTROL_PORT) },
+                onClick = { if (manualIp.isNotBlank()) onConnect(manualIp.trim(), Protocol.DEFAULT_CONTROL_PORT, spaceWalker) },
             ) { Text("Connect") }
         }
     }

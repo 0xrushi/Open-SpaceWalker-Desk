@@ -30,7 +30,7 @@ sealed class ControlMessage {
         val inputAllowed: Boolean,
     ) : ControlMessage()
 
-    /** client -> host: requests the video stream to begin. */
+    /** client -> host: requests a video stream to begin (screenId 0 = primary). */
     @Serializable
     @SerialName("start_stream")
     data class StartStream(
@@ -40,7 +40,14 @@ sealed class ControlMessage {
         val maxHeight: Int = 720,
         val fps: Int = 30,
         val bitrateBps: Int = 4_000_000,
+        /** SpaceWalker: which virtual screen this stream is for. */
+        val screenId: Int = 0,
     ) : ControlMessage()
+
+    /** client -> host: tear down one SpaceWalker screen's stream. */
+    @Serializable
+    @SerialName("remove_screen")
+    data class RemoveScreen(val screenId: Int) : ControlMessage()
 
     /** host -> client: actual encoder configuration in effect. */
     @Serializable
@@ -49,6 +56,7 @@ sealed class ControlMessage {
         val width: Int,
         val height: Int,
         val fps: Int,
+        val screenId: Int = 0,
     ) : ControlMessage()
 
     /** client -> host: a batch of input events to inject. */
@@ -104,6 +112,8 @@ sealed class RemoteInputEvent {
         val pressure: Float = 1f,
         /** Milliseconds, client monotonic clock; used for gesture duration. */
         val timeMs: Long,
+        /** SpaceWalker: which screen the touch landed on. */
+        val screenId: Int = 0,
     ) : RemoteInputEvent()
 
     /** Global navigation actions (Back / Home / Recents). */

@@ -59,7 +59,7 @@ def hello_ack(host_name: str, width: int, height: int, input_allowed: bool) -> d
 
 
 def start_stream(udp_port: int, max_w: int, max_h: int, fps: int = 30,
-                 bitrate: int = 6_000_000) -> dict:
+                 bitrate: int = 6_000_000, screen_id: int = 0) -> dict:
     return {
         "type": "start_stream",
         "videoUdpPort": udp_port,
@@ -67,15 +67,21 @@ def start_stream(udp_port: int, max_w: int, max_h: int, fps: int = 30,
         "maxHeight": max_h,
         "fps": fps,
         "bitrateBps": bitrate,
+        "screenId": screen_id,
     }
 
 
-def video_config(width: int, height: int, fps: int) -> dict:
-    return {"type": "video_config", "width": width, "height": height, "fps": fps}
+def remove_screen(screen_id: int) -> dict:
+    return {"type": "remove_screen", "screenId": screen_id}
+
+
+def video_config(width: int, height: int, fps: int, screen_id: int = 0) -> dict:
+    return {"type": "video_config", "width": width, "height": height, "fps": fps,
+            "screenId": screen_id}
 
 
 def touch_event(action: str, x: float, y: float, time_ms: int,
-                pointer_id: int = 0, pressure: float = 1.0) -> dict:
+                pointer_id: int = 0, pressure: float = 1.0, screen_id: int = 0) -> dict:
     """action: DOWN | MOVE | UP | CANCEL; x/y normalized 0..1 in stream space."""
     return {
         "type": "touch",
@@ -85,6 +91,7 @@ def touch_event(action: str, x: float, y: float, time_ms: int,
         "y": y,
         "pressure": pressure,
         "timeMs": time_ms,
+        "screenId": screen_id,
     }
 
 

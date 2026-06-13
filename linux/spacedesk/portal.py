@@ -20,6 +20,8 @@ _PORTAL_BUS = "org.freedesktop.portal.Desktop"
 _PORTAL_PATH = "/org/freedesktop/portal/desktop"
 
 SOURCE_MONITOR = 1
+SOURCE_WINDOW = 2
+SOURCE_VIRTUAL = 4  # GNOME/KDE: creates a brand-new virtual (extended) monitor
 CURSOR_EMBEDDED = 2
 
 
@@ -77,15 +79,24 @@ class ScreenCast:
 
     # ------------------------------------------------------------- public ---
 
-    def start(self) -> Tuple[int, int, Tuple[int, int]]:
-        """Runs the full consent flow. Returns (pipewire_fd, node_id, (w, h))."""
-        results = self._request("CreateSession", "(a{sv})",
-                                session_handle_token=GLib.Variant("s", "spacedesk_session"))
+    def start(self, types: int = SOURCE_MONITOR) -> Tuple[int, int, Tuple[int, int], Tuple[int, int]]:
+        """Runs the full consent flow.
+
+        Returns (pipewire_fd, node_id, (w, h), (x, y)) — position is the
+        stream's place in the global desktop layout when the portal reports it.
+        Pass types=SOURCE_MONITOR|SOURCE_VIRTUAL to let the user create a new
+        virtual monitor (true extended display on GNOME/KDE).
+        """
+        self._counter_session = getattr(self, "_counter_session", 0) + 1
+        results = self._request(
+            "CreateSession", "(a{sv})",
+            session_handle_token=GLib.Variant("s", f"spacedesk_session{self._counter_session}"),
+        )
         self._session = results["session_handle"]
 
         self._request(
             "SelectSources", "(oa{sv})", self._session,
-            types=GLib.Variant("u", SOURCE_MONITOR),
+            types=GLib.Variant("u", types),
             multiple=GLib.Variant("b", False),
             cursor_mode=GLib.Variant("u", CURSOR_EMBEDDED),
         )
@@ -96,6 +107,7 @@ class ScreenCast:
             raise RuntimeError("portal returned no streams")
         node_id, props = streams[0]
         size = tuple(props.get("size", (0, 0)))
+        position = tuple(props.get("position", (0, 0)))
 
         fd_variant, fd_list = self._proxy.call_with_unix_fd_list_sync(
             "OpenPipeWireRemote",
@@ -103,7 +115,7 @@ class ScreenCast:
             Gio.DBusCallFlags.NONE, -1, None, None,
         )
         fd = fd_list.get(fd_variant.unpack()[0])
-        return fd, node_id, size
+        return fd, node_id, size, position
 
     def close(self) -> None:
         if self._session:
