@@ -68,3 +68,7 @@ Not yet implemented (deliberate v1 cuts): audio capture (`AudioPlaybackCaptureCo
 ## Roadmap
 
 v1.1: audio (AAC over the same UDP framing), TLS on the control channel + PIN pairing, keyframe-on-loss request. v2: app-level second screen via `DisplayManager.createVirtualDisplay` Presentation API (true "extend" for cooperating apps), multi-client, USB mode via tethered networking.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
